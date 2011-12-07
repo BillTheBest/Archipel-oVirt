@@ -1,0 +1,69 @@
+#!/bin/bash
+#
+# ovirt-config-uninstall - destroys an installed copy of the oVirt node
+
+# SYNOPSIS
+# Destroys the HostVG volume group and logical volumes.
+#
+
+. /usr/libexec/ovirt-functions
+
+ME=$(basename "$0")
+warn() { printf '%s: %s\n' "$ME" "$*" >&2; }
+die() { warn "$*"; exit 1; }
+
+trap '__st=$?; stop_log; exit $__st' 0
+trap 'exit $?' 1 2 13 15
+
+cat <<EOF
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+!!                                                                           !!
+!! WARNING !! WARNING !! WARNING !! WARNING !! WARNING !! WARNING !! WARNING !!
+!!                                                                           !!
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+   If you proceed, you will DESTROY any existing data relating to the oVirt
+   installation on this machine.
+
+EOF
+
+if ask_yes_or_no "Do you wish to continue and uninstall this node ([Y]es/[N]o)?"; then
+    if vgs --noheadings HostVG -o vg_name >/dev/null 2>&1; then
+        log "Uninstalling node"
+        log "Detaching logging"
+        start_log
+        # multipathd holds all mounts under /var in a private namespace
+        service multipathd stop 6>&- 7>&-
+        rm -f /var/lib/multipath/bindings
+        unmount_logging
+        unmount_config /etc/default/ovirt
+        # remove rootfs labels
+        for label in Root RootBackup RootUpdate RootNew; do
+            root="$(findfs LABEL=$label 2>/dev/null)"
+            if [ "$root" ]; then
+                e2label "$root" ""
+            fi
+            rm -f /dev/disk/by-label/$label
+        done
+        log "Removing volume groups"
+        wipe_volume_group HostVG
+        wipe_volume_group AppVG
+        #log "Removing partitions"
+        #wipe_partitions "$pv_dev"
+        #wipe_partitions "$root_dev"
+        #wipe_partitions "$root2_dev"
+
+        #restart multipath
+        multipath -F
+        multipath -v3
+        service multipathd start 6>&- 7>&-
+        log "Finished uninstalling node."
+        stop_log
+    else
+        log "There is no installed node instance to remove."
+        log "Aborting"
+        exit 1
+    fi
+else
+    log "Aborted"
+fi

@@ -1,0 +1,18 @@
+#!/bin/bash
+. /etc/profile
+# Hide kernel messages on the console
+sudo dmesg -n 1
+TTY=`tty|sed 's/\/dev\///g'`
+# clear leftover lockfiles files created for ssh sessions
+if [[ $TTY =~ "pts" ]]; then
+    TTY=`echo $TTY|sed 's/\///g'`
+    sudo rm -rf /tmp/ovirt-setup.$TTY
+fi
+sudo /usr/libexec/ovirt-config-setup
+
+# check for logout return code and drop to login prompt
+ret=$?
+if [[ $ret == 2 ]]; then
+    sudo rm -rf /tmp/ovirt-setup.$TTY
+    /usr/bin/clear; exit
+fi
